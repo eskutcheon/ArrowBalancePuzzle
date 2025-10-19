@@ -1,8 +1,10 @@
 
 import random
+from collections import defaultdict
+from itertools import product, filterfalse
 from typing import List, Dict, Set, Tuple, Optional
 from src.structs import Difficulty
-from src.utils import count_visible_arrows, get_allowed_directions
+from src.utils import get_allowed_directions, count_visible_arrows
 
 
 SUPPORTED_DIRECTIONS = ("N", "E", "S", "W")
@@ -35,7 +37,7 @@ def _default_number_layout(rows: int, cols: int) -> Set[Tuple[int, int]]:
 
 def _layout_to_grid(rows: int, cols: int, numbers: Set[Tuple[int, int]]) -> List[List[str]]:
     """ Build an empty puzzle grid with '.' where arrows will go and '0' placeholders in number cells
-        0s get replaced with actual counts later # TODO: might want to make these None to be safe later
+        0s get replaced with actual counts later
     """
     g = [["." for _ in range(cols)] for _ in range(rows)]
     for (r, c) in numbers:
@@ -46,25 +48,14 @@ def _layout_to_grid(rows: int, cols: int, numbers: Set[Tuple[int, int]]) -> List
 def _assign_random_arrows(grid: List[List[str]], rng: random.Random) -> None:
     """ Fill every '.' with a random direction token in-place. """
     R, C = len(grid), len(grid[0])
-    for r in range(R):
-        for c in range(C):
-            if grid[r][c] == ".":
-                allowed = get_allowed_directions(r, c, R, C)
-                #? NOTE: this should never happen given the grid size constraints, but it helps to fail fast if it does
-                assert allowed, f"No allowed directions at {(r,c)}; check grid size."
-                grid[r][c] = rng.choice(allowed)
-
-
-def _impose_numbers_from_solution(sol_grid: List[List[str]]) -> None:
-    """ Convert a "solution" grid (numbers already in place as placeholders) to a valid puzzle by overwriting
-            each numbered cell with the count of incoming arrows.
-        Raises ValueError if a count exceeds 9 (this format assumes single digits).
-    """
-    R, C = len(sol_grid), len(sol_grid[0])
-    for r in range(R):
-        for c in range(C):
-            if sol_grid[r][c].isdigit():
-                sol_grid[r][c] = str(count_visible_arrows(sol_grid, (r, c)))
+    # for r, c in product(range(R), range(C)):
+    #     if grid[r][c] == ".":
+    for r, c in filterfalse(lambda idx: grid[idx[0]][idx[1]] != ".", product(range(R), range(C))):
+        # iterating over (r,c) where grid[r][c] == "."
+        allowed = get_allowed_directions(r, c, R, C)
+        #? NOTE: this should never happen given the grid size constraints, but it helps to fail fast if it does
+        assert allowed, f"No allowed directions at {(r,c)}; check grid size."
+        grid[r][c] = rng.choice(allowed)
 
 
 def _mask_arrows(
@@ -75,18 +66,55 @@ def _mask_arrows(
     """ Return a grid by hiding each arrow with probability (1-clue_rate) while numbers are kept. clue_rate in [0,1]. """
     R, C = len(solution), len(solution[0])
     puzzle = [[solution[r][c] for c in range(C)] for r in range(R)]
-    for r in range(R):
-        for c in range(C):
-            tok = solution[r][c]
-            if tok in SUPPORTED_DIRECTIONS:
-                if rng.random() > clue_rate:
-                    puzzle[r][c] = "."
+    for r, c in product(range(R), range(C)):
+        # if current token is in arrow directions and random check fails, mask it
+        if solution[r][c] in SUPPORTED_DIRECTIONS and rng.random() > clue_rate:
+            puzzle[r][c] = "."
     return puzzle
 
 
-def _compute_all_counts(sol_grid: List[List[str]], numbers: Set[Tuple[int, int]]) -> Dict[Tuple[int, int], int]:
-    """ Return a dict of counts for every numbered position using a fast counter. """
-    return {p: count_visible_arrows(sol_grid, p) for p in numbers}
+def _inbound_dir_to(rt: int, ct: int, r: int, c: int) -> Optional[str]:
+    """ Precompute inbound direction per relative position for speed, i.e. for a target at (rt,ct):
+        - same row, j < ct => inbound dir 'E';      j > ct => inbound dir 'W'
+        - same col, i < rt => inbound dir 'S';      i > rt => inbound dir 'N'
+    """
+    if r == rt:
+        return 'E' if c < ct else ('W' if c > ct else None)
+    if c == ct:
+        return 'S' if r < rt else ('N' if r > rt else None)
+    return None
+
+def _count_contributors(
+        numbers: Set[Tuple[int, int]],
+        bounds: Tuple[int, int]
+    ) -> Tuple[
+            Dict[Tuple[int, int], List[Tuple[Tuple[int, int], str]]],
+            Dict[Tuple[int, int], List[Tuple[Tuple[int, int], str]]]
+        ]:
+    """ precompute which arrows can contribute to which numbers and vice versa for faster repair """
+    contributors_by_number = defaultdict(list)
+    arrows_to_numbers = defaultdict(list)
+    R, C = bounds
+    for rt, ct in numbers:
+        # collect *contributing* arrow coordinates to t
+        for c in range(C):
+            if c == ct or (rt, c) in numbers:
+                continue
+            inbound = _inbound_dir_to(rt, ct, rt, c)
+            if inbound:
+                pos = (rt, c)
+                contributors_by_number[(rt, ct)].append((pos, inbound))
+                # collect *contributing* arrow coordinates to t
+                arrows_to_numbers[pos].append(((rt, ct), inbound))
+        for r in range(R):
+            if r == rt or (r, ct) in numbers:
+                continue
+            inbound = _inbound_dir_to(rt, ct, r, ct)
+            if inbound:
+                pos = (r, ct)
+                contributors_by_number[(rt, ct)].append((pos, inbound))
+                arrows_to_numbers[pos].append(((rt, ct), inbound))
+    return contributors_by_number, arrows_to_numbers
 
 
 def _choose_flip_direction(rng: random.Random, current: str, allowed: Set[str]) -> Optional[str]:
@@ -98,7 +126,6 @@ def _choose_flip_direction(rng: random.Random, current: str, allowed: Set[str]) 
     return rng.choice(choices)
 
 
-# TODO: I really hate how long and how deeply nested this is, so decompose it to several smaller functions later
 def _repair_overflows(
     sol_grid: List[List[str]],
     numbers: Set[Tuple[int, int]],
@@ -110,19 +137,9 @@ def _repair_overflows(
         Returns True on success; False if we exceeded max_flips (caller can resample).
     """
     R, C = len(sol_grid), len(sol_grid[0])
-    counts = _compute_all_counts(sol_grid, numbers)
-
-    def inbound_dir_to(rt: int, ct: int, r: int, c: int) -> Optional[str]:
-        """ Precompute inbound direction per relative position for speed, i.e. for a target at (rt,ct):
-            - same row, j < ct => inbound dir 'E';      j > ct => inbound dir 'W'
-            - same col, i < rt => inbound dir 'S';      i > rt => inbound dir 'N'
-        """
-        if r == rt:
-            return 'E' if c < ct else ('W' if c > ct else None)
-        if c == ct:
-            return 'S' if r < rt else ('N' if r > rt else None)
-        return None
-
+    # counts = _compute_all_counts(sol_grid, numbers)
+    counts = {p: count_visible_arrows(sol_grid, p) for p in numbers}
+    contrib_by_number, arrows_to_numbers = _count_contributors(numbers, (R, C))
     flips = 0
     # Build a quick lookup of number positions for membership tests
     while True: # main repairing loop
@@ -138,23 +155,7 @@ def _repair_overflows(
         t = over[0]
         rt, ct = t # unpacking Pos while keeping t for indexing counts
         need_reduce = counts[t] - max_digit
-        # collect *contributing* arrow coordinates to t
-        contributors: List[Tuple[int,int]] = []
-        for c in range(C): # scan row
-            # skip current cell and any numbers
-            if c == ct or (rt, c) in numbers: #number_cells:
-                continue
-            d = inbound_dir_to(rt, ct, rt, c)
-            if d and sol_grid[rt][c] == d:
-                contributors.append((rt, c))
-        # scan column
-        for r in range(R):
-            # skip current cell and any numbers
-            if r == rt or (r, ct) in numbers: #number_cells:
-                continue
-            d = inbound_dir_to(rt, ct, r, ct)
-            if d and sol_grid[r][ct] == d:
-                contributors.append((r, ct))
+        contributors = [pos for (pos, d) in contrib_by_number[t] if sol_grid[pos[0]][pos[1]] == d]
         if not contributors:  # Shouldn’t happen, but defensive
             return False
         # Flip up to `need_reduce` contributors this round
@@ -163,24 +164,26 @@ def _repair_overflows(
         contributors.sort(key=lambda rc: (abs(rc[0] - rt) + abs(rc[1] - ct)), reverse=True)
         k = min(need_reduce, max(1, len(contributors)))
         for (ra, ca) in contributors[:k]:
-            cur = sol_grid[ra][ca]
-            forbid = inbound_dir_to(rt, ct, ra, ca)  # direction that would keep contributing to t
-            forbid = set(forbid) if forbid else set()
-            allowed = set(get_allowed_directions(ra, ca, R, C)) - forbid
-            new_dir = _choose_flip_direction(rng, cur, allowed)
-            if new_dir is None or new_dir == cur:
+            curr = sol_grid[ra][ca]
+            forbid = _inbound_dir_to(rt, ct, ra, ca)  # direction that would keep contributing to t
+            allowed = set(get_allowed_directions(ra, ca, R, C))
+            if forbid:
+                allowed.discard(forbid)
+            new_dir = _choose_flip_direction(rng, curr, allowed)
+            if new_dir is None or new_dir == curr:
                 continue
             sol_grid[ra][ca] = new_dir
             flips += 1
             if flips > max_flips:
                 return False
-            # recompute counts for numbers in same row/col of (ra,ca)
-            for pr, pc in numbers:
-                if pr == ra or pc == ca or pr == rt or pc == ct:
-                    counts[(pr, pc)] = count_visible_arrows(sol_grid, (pr, pc))
+            # update counts for all affected numbers
+            for (target_pos, inbound_dir) in arrows_to_numbers[(ra, ca)]:
+                if curr == inbound_dir:
+                    counts[target_pos] -= 1
+                if new_dir == inbound_dir:
+                    counts[target_pos] += 1
             # terminate early if we already fixed this target’s overflow
-            if count_visible_arrows(sol_grid, t) <= max_digit:
-                counts[t] = count_visible_arrows(sol_grid, t)
+            if counts[t] <= max_digit:
                 break
 
 
@@ -209,7 +212,7 @@ def _apply_easy_border_nudge(puzzle: List[List[str]], solution: List[List[str]])
             for i in range(bound):
                 tok = solution[idx][i] if is_row else solution[i][idx]
                 if tok in SUPPORTED_DIRECTIONS:
-                    a, b, = idx, i if is_row else i, idx
+                    a, b, = (idx, i) if is_row else (i, idx)
                     puzzle[a][b] = tok
                     break
     # top and bottom edges

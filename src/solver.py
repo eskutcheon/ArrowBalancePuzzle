@@ -1,5 +1,7 @@
 
-from typing import Dict, List, Optional, Tuple, Callable, Union
+from collections import defaultdict, deque
+from itertools import chain
+from typing import Dict, List, Optional, Tuple, Callable, Union, Iterable
 # importing classes used to define the puzzle structure
 from src.structs import Direction, Puzzle
 from src.utils import get_allowed_directions
@@ -74,13 +76,13 @@ class ArrowCSP:
         self.lb: Dict[CellDirection, int] = {}
         self.ub: Dict[CellDirection, int] = {}
         # TODO: rename later to reflect deprecation of "literal" terminology
-        self.lit_to_numbers: Dict[CellDirection, List[Pos]] = {}
+        self.lit_to_numbers: Dict[CellDirection, List[Pos]] = defaultdict(list)
         # Indexing helpers
-        self.arrow_dirs: Dict[Pos, List[CellDirection]] = {}     # pos -> 4 CellDirections (p,d)
-        self.num_candidates: Dict[Pos, List[CellDirection]] = {} # number pos -> inbound CellDirections
+        self.arrow_dirs: Dict[Pos, List[CellDirection]] = defaultdict(list)     # pos -> 4 CellDirections (p,d)
+        self.num_candidates: Dict[Pos, List[CellDirection]] = defaultdict(list) # number pos -> inbound CellDirections
         # Work queue for incremental propagation
-        self._queue_numbers: List[Pos] = []
-        self._queue_arrows: List[Pos] = []
+        self._queue_numbers: deque[Pos] = deque() #[]
+        self._queue_arrows: deque[Pos] = deque() #[]
         # TODO: rename function - Literal used to refer to CellDirection but that's a terrible idea with typing.Literal being ubiquitous
         self._build_literals()
         self._index_visibility()
@@ -110,20 +112,13 @@ class ArrowCSP:
     def _build_literals(self) -> None:
         """ Initialize lb/ub for each CellDirection and the arrow->CellDirections index. """
         for p in self.puz.arrow_cells:
-            li = []
             for d in Direction.all():
-                # TODO: need to update to exclude invalid directions on edges
                 lit = (p, d)
                 self.lb[lit] = 0
                 self.ub[lit] = int(d.value in get_allowed_directions(p[0], p[1], self.puz.rows, self.puz.cols))
-                li.append(lit)
-            self.arrow_dirs[p] = li
+                self.arrow_dirs[p].append(lit)
 
 
-    # TODO: extract from this class and generalize to a utility function that also performs validation
-        # UPDATE: added the function `loop_in_direction` to utils.py which can handle arbitrary index-based loop conditions and callback actions
-        # doesn't really account for the current use of `Pos` and class variables in this function but _index_visibility should be able to be adapted
-        # honestly kind of hating the way CellDirection is used here, as well as the unnecessary complexity of using the Enum for now
     def _index_visibility(self) -> None:
         """ For each numbered cell t, compute the set of inbound CellDirections that can see t:
             - left of t, the E CellDirections
@@ -133,41 +128,29 @@ class ArrowCSP:
         """
         R, C = self.puz.rows, self.puz.cols
 
-        def search_in_direction(
-            start_idx: int,
-            loop_cond: Callable[[int], bool],
-            get_pos: Callable[[int], Pos],
-            target_dir: Direction
-        ) -> List[CellDirection]:
-            """ helper function to search in direction target_dir until hitting an edge, while collecting valid CellDirections """
-            valid: List[CellDirection] = []
-            while loop_cond(start_idx):
-                p = get_pos(start_idx)
-                if p in self.arrow_dirs:
-                    valid.append((p, target_dir))
-                start_idx += 1
-            return valid
+        def ray_generator(t: Pos, offset: Tuple[int, int], direction: Direction) -> Iterable[Pos]:
+            """generate positions in a ray from t in the given direction until hitting bounds (for use with itertools.chain) """
+            dr, dc = offset
+            r, c = t[0] + dr, t[1] + dc
+            while 0 <= r < R and 0 <= c < C:
+                if (r, c) in self.arrow_dirs:
+                    yield ((r, c), direction)
+                r += dr
+                c += dc
 
-        for t, _ in self.puz.numbers.items():
-            tr, tc = t
-            inbound: List[CellDirection] = []
-            # search left of position (same row, c'<t.c), arrows must point East
-            c = tc - 1 #t.c - 1
-            inbound.extend(search_in_direction(c, lambda x: x >= 0, lambda x: (tr, x), Direction.E))
-            # search right (arrows must point West)
-            c = tc + 1 #t.c + 1
-            inbound.extend(search_in_direction(c, lambda x: x < C, lambda x: (tr, x), Direction.W))
-            # search above (arrows must point South)
-            r = tr - 1
-            inbound.extend(search_in_direction(r, lambda x: x >= 0, lambda x: (x, tc), Direction.S))
-            # search below (arrows must point North)
-            r = tr + 1
-            inbound.extend(search_in_direction(r, lambda x: x < R, lambda x: (x, tc), Direction.N))
+        for t in self.puz.numbers.keys():
+            inbound = list(chain(
+                ray_generator(t, (0, -1), Direction.E),  # left
+                ray_generator(t, (0, 1), Direction.W),   # right
+                ray_generator(t, (-1, 0), Direction.S),  # above
+                ray_generator(t, (1, 0), Direction.N)    # below
+            ))
             self.num_candidates[t] = inbound
             #& UPDATE: populate the reverse index for (CellDirection -> numbers) to reduce enqueue cost to O(1)
             # after building inbound list per t, also populate reverse map:
             for lit in inbound:
-                self.lit_to_numbers.setdefault(lit, []).append(t)
+                self.lit_to_numbers[lit].append(t)
+
 
     def _seed_fixed(self) -> None:
         """ Apply pre-placed arrows and enforce '0' numbers as immediate bans, enqueue affected. """
@@ -198,15 +181,15 @@ class ArrowCSP:
         """ Process queues until stable. Returns False if a contradiction is found. """
         # Initially, everything is "dirty"
         if not self._queue_numbers and not self._queue_arrows:
-            self._queue_numbers = list(self.puz.numbers.keys())
-            self._queue_arrows = list(self.puz.arrow_cells)
+            self._queue_numbers.extend(self.puz.numbers.keys())
+            self._queue_arrows.extend(self.puz.arrow_cells)
         while self._queue_numbers or self._queue_arrows:
             while self._queue_numbers:
-                t = self._queue_numbers.pop()
+                t = self._queue_numbers.popleft()
                 if not self._propagate_number(t):
                     return False
             while self._queue_arrows:
-                p = self._queue_arrows.pop()
+                p = self._queue_arrows.popleft()
                 if not self._propagate_arrow_exactly_one(p):
                     return False
         return True
@@ -237,8 +220,8 @@ class ArrowCSP:
         """ Per-number equality filtering on sum of inbound CellDirections and per-CellDirection necessity/impossibility checks
             ```sum lb <= target <= sum ub```
         """
-        def set_cand_if_changed(lit: CellDirection, v: int, is_lb: bool, condition: Callable[[None], bool]) -> bool:
-            """ Helper to reduce repetition - Sets lb or ub of lit to v if condition() is true, enqueues neighbors, and returns True if changed. """
+        def set_cand_if_changed(lit: CellDirection, v: int, is_lb: bool, condition: Callable[[], bool]) -> bool:
+            """ helper for repeated structure - sets lb or ub of lit to v if condition() is true, enqueues neighbors, and returns True if changed """
             if condition():
                 if is_lb:
                     self._set_lb(lit, v)
@@ -412,7 +395,7 @@ class ArrowCSP:
         self._queue_arrows.clear()
         # After restoring, we need to re-enqueue all constraints touched by any change.
         # For simplicity, re-enqueue everything (still very fast on these sizes).
-        self._queue_numbers = list(self.puz.numbers.keys())
-        self._queue_arrows = list(self.puz.arrow_cells)
+        self._queue_numbers.extend(self.puz.numbers.keys())
+        self._queue_arrows.extend(self.puz.arrow_cells)
 
 

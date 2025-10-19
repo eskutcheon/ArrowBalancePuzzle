@@ -1,4 +1,5 @@
 
+from functools import lru_cache
 from copy import deepcopy
 from typing import Dict, List, Tuple, Iterable, Callable
 
@@ -143,17 +144,18 @@ def validate_solution_against_puzzle(
     return validate_filled_grid(filled_grid)
 
 
-def get_allowed_directions(r: int, c: int, r_max: int, c_max: int) -> List[str]:
-    allowed = set()
+@lru_cache(maxsize=None)
+def get_allowed_directions(r: int, c: int, r_max: int, c_max: int) -> Tuple[str, ...]: #List[str]:
+    allowed = [] #set()
     if r > 0:
-        allowed.add("N")
+        allowed.append("N")
     if r < r_max - 1:
-        allowed.add("S")
+        allowed.append("S")
     if c > 0:
-        allowed.add("W")
+        allowed.append("W")
     if c < c_max - 1:
-        allowed.add("E")
-    return list(allowed)
+        allowed.append("E")
+    return tuple(allowed)
 
 
 # TODO: replace with pprint.pprint or some table formatting library later
