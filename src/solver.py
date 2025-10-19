@@ -1,10 +1,10 @@
 
 from typing import Dict, List, Optional, Tuple, Callable, Union
 # importing classes used to define the puzzle structure
-from src.structs import Pos, Direction, Puzzle
+from src.structs import Direction, Puzzle
 from src.utils import get_allowed_directions
 
-
+Pos = Tuple[int, int]  # (row, col)
 CellDirection = Tuple[Pos, Direction]  # a single boolean variable "pos has arrow in direction ___"
 
 
@@ -25,12 +25,7 @@ def count_solutions(grid: List[List[str]], limit: int = 2) -> int:
                 return True  # invalid solution, discard and keep searching
             count += 1
             return count < limit  # stop exploring when we hit the cap
-        p = solver._pick_branch_cell()
-        # if p is None:
-        #     # Should not happen (check with `is_decided` handled above), but to be safe:
-        #     print("CHECKING IF THIS EVER RUNS")
-        #     count += 1
-        #     return count < limit
+        p = solver._pick_branch_cell() # should be guaranteed not to be NoneType here after checking solver._is_decided()
         snapshot = solver._snapshot_domains()
         for lit in solver.arrow_dirs[p]:
             if solver.lb[lit] == 0 and solver.ub[lit] == 1:
@@ -120,8 +115,6 @@ class ArrowCSP:
                 # TODO: need to update to exclude invalid directions on edges
                 lit = (p, d)
                 self.lb[lit] = 0
-                # self.ub[lit] = 1 if d in allowed directions else 0
-                # self.ub[lit] = int(d.value in get_allowed_directions(p.r, p.c, self.puz.rows, self.puz.cols))
                 self.ub[lit] = int(d.value in get_allowed_directions(p[0], p[1], self.puz.rows, self.puz.cols))
                 li.append(lit)
             self.arrow_dirs[p] = li
@@ -139,37 +132,37 @@ class ArrowCSP:
             - below t, the N CellDirections
         """
         R, C = self.puz.rows, self.puz.cols
+
+        def search_in_direction(
+            start_idx: int,
+            loop_cond: Callable[[int], bool],
+            get_pos: Callable[[int], Pos],
+            target_dir: Direction
+        ) -> List[CellDirection]:
+            """ helper function to search in direction target_dir until hitting an edge, while collecting valid CellDirections """
+            valid: List[CellDirection] = []
+            while loop_cond(start_idx):
+                p = get_pos(start_idx)
+                if p in self.arrow_dirs:
+                    valid.append((p, target_dir))
+                start_idx += 1
+            return valid
+
         for t, _ in self.puz.numbers.items():
             tr, tc = t
             inbound: List[CellDirection] = []
             # search left of position (same row, c'<t.c), arrows must point East
             c = tc - 1 #t.c - 1
-            while c >= 0:
-                p = (tr, c) #Pos(t.r, c)
-                if p in self.arrow_dirs:
-                    inbound.append((p, Direction.E))
-                c -= 1
+            inbound.extend(search_in_direction(c, lambda x: x >= 0, lambda x: (tr, x), Direction.E))
             # search right (arrows must point West)
             c = tc + 1 #t.c + 1
-            while c < C:
-                p = (tr, c) #Pos(t.r, c)
-                if p in self.arrow_dirs:
-                    inbound.append((p, Direction.W))
-                c += 1
+            inbound.extend(search_in_direction(c, lambda x: x < C, lambda x: (tr, x), Direction.W))
             # search above (arrows must point South)
-            r = tr - 1#t.r - 1
-            while r >= 0:
-                p = (r, tc) #Pos(r, t.c)
-                if p in self.arrow_dirs:
-                    inbound.append((p, Direction.S))
-                r -= 1
+            r = tr - 1
+            inbound.extend(search_in_direction(r, lambda x: x >= 0, lambda x: (x, tc), Direction.S))
             # search below (arrows must point North)
-            r = tr + 1 #t.r + 1
-            while r < R:
-                p = (r, tc) #Pos(r, t.c)
-                if p in self.arrow_dirs:
-                    inbound.append((p, Direction.N))
-                r += 1
+            r = tr + 1
+            inbound.extend(search_in_direction(r, lambda x: x < R, lambda x: (x, tc), Direction.N))
             self.num_candidates[t] = inbound
             #& UPDATE: populate the reverse index for (CellDirection -> numbers) to reduce enqueue cost to O(1)
             # after building inbound list per t, also populate reverse map:
@@ -367,7 +360,7 @@ class ArrowCSP:
 
     def _is_decided(self) -> bool:
         """ True if every arrow cell has exactly one direction fixed (lb==ub==1). """
-        for p, lits in self.arrow_dirs.items():
+        for lits in self.arrow_dirs.values():
             if sum(self.lb[l] for l in lits) != 1:
                 return False
             if any(self.lb[l] != self.ub[l] for l in lits):
@@ -397,8 +390,8 @@ class ArrowCSP:
         best_p: Optional[Pos] = None
         best_k = 5  # more than 4
         for p, lits in self.arrow_dirs.items():
-            k = sum(1 for l in lits if self.lb[l] == 0 and self.ub[l] == 1) + \
-                sum(1 for l in lits if self.lb[l] == 1 and self.ub[l] == 1)  # if already 1, k=1
+            # if already 1, k=1
+            k = sum(int((self.lb[l] == 0 or self.lb[l] == 1) and self.ub[l] == 1) for l in lits)
             if k == 1:
                 continue
             if k < best_k:

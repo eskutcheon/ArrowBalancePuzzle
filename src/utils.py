@@ -1,7 +1,6 @@
 
 from copy import deepcopy
 from typing import Dict, List, Tuple, Iterable, Callable
-from src.structs import Pos
 
 
 SUPPORTED_DIRECTIONS = ("N", "E", "S", "W")
@@ -40,7 +39,7 @@ def loop_in_direction(
 
 
 # TODO: generalize further and replace ArrowCSP._index_visibility with a similar helper function
-def visible_arrows_from(grid: List[List[str]], t: Pos) -> List[str]:
+def visible_arrows_from(grid: List[List[str]], t: Tuple[int, int]) -> List[str]:
     """ Return the list of arrow tokens ('N','E','S','W') that contribute to number at t
         by scanning in the four cardinal directions until the grid edge.
     """
@@ -63,7 +62,7 @@ def visible_arrows_from(grid: List[List[str]], t: Pos) -> List[str]:
     # assert len(seen) > 0, f"No visible arrows found at {t} in grid of size {R}x{C}"
     return seen
 
-def count_visible_arrows(grid: List[List[str]], t: Pos) -> int:
+def count_visible_arrows(grid: List[List[str]], t: Tuple[int, int]) -> int:
     """ Fast count of arrows that contribute to number at t (no list allocs) """
     R, C = len(grid), len(grid[0])
     r, c = t #t.r, t.c

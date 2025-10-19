@@ -1,7 +1,7 @@
 
 import random
 from typing import List, Dict, Set, Tuple, Optional
-from src.structs import Pos, Difficulty
+from src.structs import Difficulty
 from src.utils import count_visible_arrows, get_allowed_directions
 
 
@@ -18,29 +18,26 @@ _DEF_CLAMPS = {
 }
 
 
-#? NOTE: should be reusable for checking if (r,c) is a number cell instead of using str.isdigit()
-    #? which we may want to move away from in the future (especially if we move to numpy later)
-def _has_same_parity(r: int, c: int) -> bool:
-    """ Check if row and column indices have the same parity (both even or both odd) """
-    return (r % 2 == 0) == (c % 2 == 0)
+# #? NOTE: should be reusable for checking if (r,c) is a number cell instead of using str.isdigit()
+#     #? which we may want to move away from in the future (especially if we move to numpy later)
+# def _has_same_parity(r: int, c: int) -> bool:
+#     """ Check if row and column indices have the same parity (both even or both odd) """
+#     return (r % 2 == 0) == (c % 2 == 0)
 
 
-def _default_number_layout(rows: int, cols: int) -> Set[Pos]:
+def _default_number_layout(rows: int, cols: int) -> Set[Tuple[int, int]]:
     """ Place numbers on the checkerboard pattern at (even, even) and (odd, odd) cells so that every number is at
         Manhattan distance >= 2 from any other number.
     """
-    # if the row and column indices have the same parity, add a position to the final set
-    # return set([Pos(r, c) for r in range(rows) for c in range(cols) if _has_same_parity(r, c)])
-    return set(((r, c) for r in range(rows) for c in range(cols) if _has_same_parity(r, c)))
+    # if the row and column indices have the same parity (both even or both odd), add a position to the final set
+    return set(((r, c) for r in range(rows) for c in range(cols) if (r % 2 == 0) == (c % 2 == 0)))
 
 
-def _layout_to_grid(rows: int, cols: int, numbers: Set[Pos]) -> List[List[str]]:
+def _layout_to_grid(rows: int, cols: int, numbers: Set[Tuple[int, int]]) -> List[List[str]]:
     """ Build an empty puzzle grid with '.' where arrows will go and '0' placeholders in number cells
         0s get replaced with actual counts later # TODO: might want to make these None to be safe later
     """
     g = [["." for _ in range(cols)] for _ in range(rows)]
-    # for p in numbers:
-    #     g[p.r][p.c] = "0"
     for (r, c) in numbers:
         g[r][c] = "0"
     return g
@@ -67,12 +64,6 @@ def _impose_numbers_from_solution(sol_grid: List[List[str]]) -> None:
     for r in range(R):
         for c in range(C):
             if sol_grid[r][c].isdigit():
-                # TODO: might want to create a variant of visible_arrows_from that only counts arrows to reduce memory usage
-                # count = len(visible_arrows_from(sol_grid, Pos(r, c)))
-                # #? NOTE: this may not stay a hard requirement, since (I think) the requirement should be max_digit < (M + N) // 2 for an MxN grid
-                # if count > 9:
-                #     raise ValueError(f"Number at {(r,c)} is {count} (>9). Use smaller grids or extend format to multi-digit.")
-                # sol_grid[r][c] = str(count)
                 sol_grid[r][c] = str(count_visible_arrows(sol_grid, (r, c)))
 
 
@@ -93,14 +84,14 @@ def _mask_arrows(
     return puzzle
 
 
-def _compute_all_counts(sol_grid: List[List[str]], numbers: Set[Pos]) -> Dict[Pos, int]:
+def _compute_all_counts(sol_grid: List[List[str]], numbers: Set[Tuple[int, int]]) -> Dict[Tuple[int, int], int]:
     """ Return a dict of counts for every numbered position using a fast counter. """
     return {p: count_visible_arrows(sol_grid, p) for p in numbers}
 
 
 def _choose_flip_direction(rng: random.Random, current: str, allowed: Set[str]) -> Optional[str]:
     """ Choose a new direction different from current from the allowed set. """
-    #& UPDATE: now using an explicit allowed set to avoid invalid directions based on the grid edges
+    # use explicit "allowed" set to avoid invalid directions based on the grid edges
     choices = [d for d in allowed if d != current]
     if not choices:
         return None
@@ -110,7 +101,7 @@ def _choose_flip_direction(rng: random.Random, current: str, allowed: Set[str]) 
 # TODO: I really hate how long and how deeply nested this is, so decompose it to several smaller functions later
 def _repair_overflows(
     sol_grid: List[List[str]],
-    numbers: Set[Pos],
+    numbers: Set[Tuple[int, int]],
     max_digit: int,
     rng: random.Random,
     max_flips: int = 10000 # might want to dynamically increase this for larger grids
@@ -120,40 +111,36 @@ def _repair_overflows(
     """
     R, C = len(sol_grid), len(sol_grid[0])
     counts = _compute_all_counts(sol_grid, numbers)
-    # Precompute inbound direction per relative position for speed, i.e. for a target at (rt,ct):
-    #   - same row, j < ct => inbound dir 'E';      j > ct => inbound dir 'W'
-    #   - same col, i < rt => inbound dir 'S';      i > rt => inbound dir 'N'
+
     def inbound_dir_to(rt: int, ct: int, r: int, c: int) -> Optional[str]:
+        """ Precompute inbound direction per relative position for speed, i.e. for a target at (rt,ct):
+            - same row, j < ct => inbound dir 'E';      j > ct => inbound dir 'W'
+            - same col, i < rt => inbound dir 'S';      i > rt => inbound dir 'N'
+        """
         if r == rt:
             return 'E' if c < ct else ('W' if c > ct else None)
         if c == ct:
             return 'S' if r < rt else ('N' if r > rt else None)
         return None
-    # main repairing loop
+
     flips = 0
     # Build a quick lookup of number positions for membership tests
-    # number_cells = set(numbers) #{ (p.r, p.c) for p in numbers }
-    while True:
-        # Find any overflow
+    while True: # main repairing loop
+        # find any overflow
         over = [p for p, v in counts.items() if v > max_digit]
-        if not over:
-            # success
-            # Write numbers back into the grid
+        if not over: # if no more overflows, exit successfully
+            # write numbers back into the grid and return True
             for p in numbers:
-                # sol_grid[p.r][p.c] = str(counts[p])
                 sol_grid[p[0]][p[1]] = str(counts[p])
             return True
-        # Pick the worst overflow to reduce fastest
+        # pick the worst overflow to reduce fastest
         over.sort(key=lambda p: counts[p], reverse=True)
         t = over[0]
-        # rt, ct = t.r, t.c
         rt, ct = t # unpacking Pos while keeping t for indexing counts
         need_reduce = counts[t] - max_digit
-        # Collect *contributing* arrow coordinates to t
+        # collect *contributing* arrow coordinates to t
         contributors: List[Tuple[int,int]] = []
-        # TODO: replace with a helper function to reduce duplicate snippets
-        # scan row
-        for c in range(C):
+        for c in range(C): # scan row
             # skip current cell and any numbers
             if c == ct or (rt, c) in numbers: #number_cells:
                 continue
@@ -189,7 +176,6 @@ def _repair_overflows(
                 return False
             # recompute counts for numbers in same row/col of (ra,ca)
             for pr, pc in numbers:
-                # if p.r == ra or p.c == ca or p.r == rt or p.c == ct:
                 if pr == ra or pc == ca or pr == rt or pc == ct:
                     counts[(pr, pc)] = count_visible_arrows(sol_grid, (pr, pc))
             # terminate early if we already fixed this target’s overflow
@@ -212,7 +198,6 @@ def _scaled_clue_rate(rows: int, cols: int, diff: Difficulty) -> float:
 def _apply_easy_border_nudge(puzzle: List[List[str]], solution: List[List[str]]) -> None:
     """ Ensure at least one arrow remains fixed on each border line of the puzzle using for-else logic (like switch-case-finally) """
     R, C = len(puzzle), len(puzzle[0])
-    # TODO: add helper function to replace each for-else block with a single function call - should just be able to pass indices and is_row flag
     def _add_solution_to_edge(idx: int, is_row: bool) -> None:
         bound = C if is_row else R
         # TODO: each use of SUPPORTED_DIRECTIONS should probably be replaced with get_allowed_directions to be safer
@@ -254,22 +239,13 @@ def generate_initial_puzzle(
     if clue_rate is None:
         diff = difficulty or Difficulty.MEDIUM
         clue_rate = _scaled_clue_rate(rows, cols, diff)
-    # sol = _layout_to_grid(rows, cols, numbers)
-    # _assign_random_arrows(sol, rng)
-    # try:
-    #     _impose_numbers_from_solution(sol)  # fills the digits
-    # except ValueError:
-    #     raise ValueError("Generated grid has numbers > 9; try smaller grid sizes or adjust clue_rate.")
-    # puzzle = _mask_arrows(sol, clue_rate=clue_rate, rng=rng)
-    # return puzzle, sol
-    #& UPDATE: now trying to repair instead of rejecting the grid outright
     for _ in range(max_resamples):
         sol = _layout_to_grid(rows, cols, numbers)
         _assign_random_arrows(sol, rng)
-        # Try to repair any overflows; if repair fails, resample
+        # try to repair any overflows; if repair fails, resample
         if not _repair_overflows(sol, numbers, max_digit=max_digit, rng=rng):
             continue
-        # At this point, the digits are written into sol by _repair_overflows
+        # digits are now written into sol by _repair_overflows
         puzzle = _mask_arrows(sol, clue_rate=clue_rate, rng=rng)
         if difficulty == Difficulty.EASY:
             _apply_easy_border_nudge(puzzle, sol)

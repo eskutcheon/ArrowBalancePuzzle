@@ -43,3 +43,13 @@ Like every other project I've invested time into, I wrote this to challenge myse
     pretty_print(puzzle, render_arrows=False)
     pretty_print(solved)
 ```
+
+
+## Road Map
+- [ ] complete rendering engine to render and save/display grid with arrows for a "printable" format
+- [ ] introduce more sophisticated generator and solver according more typical CP-SAT formulations
+- [ ] (MAYBE) introduce reinforcement learning model for quickly solving, which would also allow quicker generation of larger puzzles
+  - [Reference](https://arxiv.org/abs/2006.01610) - "Combining Reinforcement Learning and Constraint Programming for Combinatorial Optimization"
+- [ ] create a simple GUI for playing the game interactively in its own window
+- [ ] introduce a lightweight Streamlit app for generating and solving online using the GUI backend
+- [ ] (LONG TERM) in next version, allow for diagonal or circular (arrows pointing off grid) arrow puzzles like some similar puzzles seen online

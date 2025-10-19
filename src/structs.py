@@ -19,13 +19,11 @@ class Direction(Enum):
         return (Direction.N, Direction.E, Direction.S, Direction.W)
 
 
-# TODO: a dataclass feels like overkill for just this much so might replace this with a namedtuple later or just keep Tuple[int,int]
 # @dataclass(frozen=True)
 # class Pos:
 #     """ grid position (row, col) """
 #     r: int
 #     c: int
-
 
 # replaces the old dataclass Pos with a simple type alias to eliminate needless complexity
 Pos = Tuple[int, int]  # (row, col)
