@@ -20,11 +20,15 @@ class Direction(Enum):
 
 
 # TODO: a dataclass feels like overkill for just this much so might replace this with a namedtuple later or just keep Tuple[int,int]
-@dataclass(frozen=True)
-class Pos:
-    """ grid position (row, col) """
-    r: int
-    c: int
+# @dataclass(frozen=True)
+# class Pos:
+#     """ grid position (row, col) """
+#     r: int
+#     c: int
+
+
+# replaces the old dataclass Pos with a simple type alias to eliminate needless complexity
+Pos = Tuple[int, int]  # (row, col)
 
 
 class Difficulty(Enum):
@@ -54,7 +58,7 @@ class Puzzle:
         for r in range(R):
             for c in range(C):
                 tok = grid[r][c]
-                p = Pos(r, c)
+                p = (r, c) #Pos(r, c)
                 if tok == ".":
                     arrow_cells.add(p)
                 # TODO: update to check from directions returned by get_allowed_directions
@@ -74,10 +78,10 @@ class Puzzle:
     def to_grid(self) -> List[List[str]]:
         """ Convert the puzzle to a grid representation (MxN list of strings). """
         grid = [["." for _ in range(self.cols)] for _ in range(self.rows)]
-        for pos, num in self.numbers.items():
-            grid[pos.r][pos.c] = str(num)
-        for pos, dir_ in self.fixed_arrows.items():
-            grid[pos.r][pos.c] = dir_.value
+        for (r, c), num in self.numbers.items():
+            grid[r][c] = str(num)
+        for (r, c), direction in self.fixed_arrows.items():
+            grid[r][c] = direction.value
         return grid
 
 

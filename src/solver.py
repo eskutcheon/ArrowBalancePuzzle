@@ -56,7 +56,8 @@ def solve_grid(grid: Union[List[List[str]], Puzzle]) -> Optional[List[List[str]]
     R, C = puz.rows, puz.cols
     out = [[grid[r][c] for c in range(C)] for r in range(R)]
     for p in puz.arrow_cells:
-        out[p.r][p.c] = sol[p].value
+        # out[p.r][p.c] = sol[p].value
+        out[p[0]][p[1]] = sol[p].value
     return out
 
 
@@ -120,7 +121,8 @@ class ArrowCSP:
                 lit = (p, d)
                 self.lb[lit] = 0
                 # self.ub[lit] = 1 if d in allowed directions else 0
-                self.ub[lit] = int(d.value in get_allowed_directions(p.r, p.c, self.puz.rows, self.puz.cols))
+                # self.ub[lit] = int(d.value in get_allowed_directions(p.r, p.c, self.puz.rows, self.puz.cols))
+                self.ub[lit] = int(d.value in get_allowed_directions(p[0], p[1], self.puz.rows, self.puz.cols))
                 li.append(lit)
             self.arrow_dirs[p] = li
 
@@ -138,32 +140,33 @@ class ArrowCSP:
         """
         R, C = self.puz.rows, self.puz.cols
         for t, _ in self.puz.numbers.items():
+            tr, tc = t
             inbound: List[CellDirection] = []
             # search left of position (same row, c'<t.c), arrows must point East
-            c = t.c - 1
+            c = tc - 1 #t.c - 1
             while c >= 0:
-                p = Pos(t.r, c)
+                p = (tr, c) #Pos(t.r, c)
                 if p in self.arrow_dirs:
                     inbound.append((p, Direction.E))
                 c -= 1
             # search right (arrows must point West)
-            c = t.c + 1
+            c = tc + 1 #t.c + 1
             while c < C:
-                p = Pos(t.r, c)
+                p = (tr, c) #Pos(t.r, c)
                 if p in self.arrow_dirs:
                     inbound.append((p, Direction.W))
                 c += 1
             # search above (arrows must point South)
-            r = t.r - 1
+            r = tr - 1#t.r - 1
             while r >= 0:
-                p = Pos(r, t.c)
+                p = (r, tc) #Pos(r, t.c)
                 if p in self.arrow_dirs:
                     inbound.append((p, Direction.S))
                 r -= 1
             # search below (arrows must point North)
-            r = t.r + 1
+            r = tr + 1 #t.r + 1
             while r < R:
-                p = Pos(r, t.c)
+                p = (r, tc) #Pos(r, t.c)
                 if p in self.arrow_dirs:
                     inbound.append((p, Direction.N))
                 r += 1

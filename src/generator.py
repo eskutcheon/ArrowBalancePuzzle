@@ -30,7 +30,8 @@ def _default_number_layout(rows: int, cols: int) -> Set[Pos]:
         Manhattan distance >= 2 from any other number.
     """
     # if the row and column indices have the same parity, add a position to the final set
-    return set([Pos(r, c) for r in range(rows) for c in range(cols) if _has_same_parity(r, c)])
+    # return set([Pos(r, c) for r in range(rows) for c in range(cols) if _has_same_parity(r, c)])
+    return set(((r, c) for r in range(rows) for c in range(cols) if _has_same_parity(r, c)))
 
 
 def _layout_to_grid(rows: int, cols: int, numbers: Set[Pos]) -> List[List[str]]:
@@ -38,8 +39,10 @@ def _layout_to_grid(rows: int, cols: int, numbers: Set[Pos]) -> List[List[str]]:
         0s get replaced with actual counts later # TODO: might want to make these None to be safe later
     """
     g = [["." for _ in range(cols)] for _ in range(rows)]
-    for p in numbers:
-        g[p.r][p.c] = "0"
+    # for p in numbers:
+    #     g[p.r][p.c] = "0"
+    for (r, c) in numbers:
+        g[r][c] = "0"
     return g
 
 
@@ -70,7 +73,7 @@ def _impose_numbers_from_solution(sol_grid: List[List[str]]) -> None:
                 # if count > 9:
                 #     raise ValueError(f"Number at {(r,c)} is {count} (>9). Use smaller grids or extend format to multi-digit.")
                 # sol_grid[r][c] = str(count)
-                sol_grid[r][c] = str(count_visible_arrows(sol_grid, Pos(r, c)))
+                sol_grid[r][c] = str(count_visible_arrows(sol_grid, (r, c)))
 
 
 def _mask_arrows(
@@ -129,7 +132,7 @@ def _repair_overflows(
     # main repairing loop
     flips = 0
     # Build a quick lookup of number positions for membership tests
-    number_cells = { (p.r, p.c) for p in numbers }
+    # number_cells = set(numbers) #{ (p.r, p.c) for p in numbers }
     while True:
         # Find any overflow
         over = [p for p, v in counts.items() if v > max_digit]
@@ -137,12 +140,14 @@ def _repair_overflows(
             # success
             # Write numbers back into the grid
             for p in numbers:
-                sol_grid[p.r][p.c] = str(counts[p])
+                # sol_grid[p.r][p.c] = str(counts[p])
+                sol_grid[p[0]][p[1]] = str(counts[p])
             return True
         # Pick the worst overflow to reduce fastest
         over.sort(key=lambda p: counts[p], reverse=True)
         t = over[0]
-        rt, ct = t.r, t.c
+        # rt, ct = t.r, t.c
+        rt, ct = t # unpacking Pos while keeping t for indexing counts
         need_reduce = counts[t] - max_digit
         # Collect *contributing* arrow coordinates to t
         contributors: List[Tuple[int,int]] = []
@@ -150,7 +155,7 @@ def _repair_overflows(
         # scan row
         for c in range(C):
             # skip current cell and any numbers
-            if c == ct or (rt, c) in number_cells:
+            if c == ct or (rt, c) in numbers: #number_cells:
                 continue
             d = inbound_dir_to(rt, ct, rt, c)
             if d and sol_grid[rt][c] == d:
@@ -158,7 +163,7 @@ def _repair_overflows(
         # scan column
         for r in range(R):
             # skip current cell and any numbers
-            if r == rt or (r, ct) in number_cells:
+            if r == rt or (r, ct) in numbers: #number_cells:
                 continue
             d = inbound_dir_to(rt, ct, r, ct)
             if d and sol_grid[r][ct] == d:
@@ -182,24 +187,12 @@ def _repair_overflows(
             flips += 1
             if flips > max_flips:
                 return False
-            # Update counts incrementally for affected numbers along row/col
-            # Only numbers in same row or column could be affected.
-            # Row numbers
-            #** commented out loop given by copilot but didn't actually do any updates
-            # for c in range(C):
-            #     if (rt, c) in number_cells:
-            #         pnum = Pos(rt, c)
-            #         # old contributed to pnum if cur equals inbound_dir_to(rt, c, ra, ca)
-            #         old_inb = inbound_dir_to(rt, c, ra, ca)
-            #         new_inb = inbound_dir_to(rt, c, ra, ca)
-                    # recompute with new_dir only for the two numbers aligned with (ra,ca)
-                    # But we actually need rt==ra or ct==ca; the loop has fixed rt
-                    # We'll just recompute counts for numbers in same row/col to keep it simple and still fast
-            # Simpler and robust: recompute counts for numbers in same row/col of (ra,ca)
-            for p in numbers:
-                if p.r == ra or p.c == ca or p.r == rt or p.c == ct:
-                    counts[p] = count_visible_arrows(sol_grid, p)
-            # Early break if we already fixed this target’s overflow
+            # recompute counts for numbers in same row/col of (ra,ca)
+            for pr, pc in numbers:
+                # if p.r == ra or p.c == ca or p.r == rt or p.c == ct:
+                if pr == ra or pc == ca or pr == rt or pc == ct:
+                    counts[(pr, pc)] = count_visible_arrows(sol_grid, (pr, pc))
+            # terminate early if we already fixed this target’s overflow
             if count_visible_arrows(sol_grid, t) <= max_digit:
                 counts[t] = count_visible_arrows(sol_grid, t)
                 break

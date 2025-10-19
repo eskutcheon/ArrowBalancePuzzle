@@ -5,10 +5,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any, Literal, Union
 # importing classes used to define the puzzle structure
-from solver import count_solutions, solve_grid
-from utils import validate_filled_grid, validate_solution_against_puzzle, pretty_print
-from generator import generate_initial_puzzle
-from structs import PuzzleMetadata, Difficulty
+from src.solver import count_solutions, solve_grid
+from src.utils import validate_filled_grid, validate_solution_against_puzzle, pretty_print
+from src.generator import generate_initial_puzzle
+from src.structs import PuzzleMetadata, Difficulty
 
 
 
@@ -196,9 +196,10 @@ if __name__ == "__main__":
     # test_loading()
     test_shapes = [
         (5,5), (5,7), (5,9),
-        (7,5), (7,7), (7,9),
-        (9,7), (9,9), (9,11),
-        (11,9), (11,11), # (11,13),
+        # (7,5), (7,7), (7,9),
+        # (9,7), (9,9), (9,11),
+        # (11,9), (11,11),
+        # (11,13),
         #(13,11), (13,13), (13,15),
         #(15,13), (15,15), (15,17)
     ]

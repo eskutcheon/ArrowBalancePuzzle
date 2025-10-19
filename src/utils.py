@@ -45,7 +45,7 @@ def visible_arrows_from(grid: List[List[str]], t: Pos) -> List[str]:
         by scanning in the four cardinal directions until the grid edge.
     """
     R, C = len(grid), len(grid[0])
-    r, c = t.r, t.c
+    r, c = t #t.r, t.c
     seen: List[str] = []
     def append_if_valid(tok: str, target_tok: str) -> None:
         """ Append token to seen if it matches the target direction """
@@ -66,7 +66,7 @@ def visible_arrows_from(grid: List[List[str]], t: Pos) -> List[str]:
 def count_visible_arrows(grid: List[List[str]], t: Pos) -> int:
     """ Fast count of arrows that contribute to number at t (no list allocs) """
     R, C = len(grid), len(grid[0])
-    r, c = t.r, t.c
+    r, c = t #t.r, t.c
     cnt = 0
     def increment_if_valid(tok: str, target_tok: str) -> None:
         nonlocal cnt
@@ -108,7 +108,7 @@ def validate_filled_grid(grid: List[List[str]]) -> Tuple[bool, str]:
             tok = grid[r][c]
             if tok.isdigit():
                 want = int(tok)
-                seen = visible_arrows_from(grid, Pos(r, c))
+                seen = visible_arrows_from(grid, (r, c))
                 got = len(seen)
                 if got != want:
                     return False, f"Number {want} at {(r,c)} only sees {got} incoming arrows ({seen})"

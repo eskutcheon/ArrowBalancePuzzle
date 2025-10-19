@@ -214,3 +214,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+arrow_maze_concept.py
