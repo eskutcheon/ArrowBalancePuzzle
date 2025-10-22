@@ -1,30 +1,16 @@
-
+# src/main.py # TODO: not currently true but it's going to src/ later after adding mostly parsers to the main entry point
 import json
-import random
 from pathlib import Path
 from datetime import datetime
+import random
 from typing import Dict, List, Optional, Tuple, Any, Literal, Union
 # importing classes used to define the puzzle structure
-from src.solver import count_solutions, solve_grid
-from src.utils import validate_filled_grid, validate_solution_against_puzzle, pretty_print
+from src.solver.solver_csp import count_solutions, solve_grid
+from src.utils import validate_filled_grid, pretty_print, get_clue_rate #, validate_solution_against_puzzle
 from src.generator import generate_initial_puzzle
 from src.structs import PuzzleMetadata, Difficulty
 
 
-
-def get_clue_rate(row, cols, clue_rate: Optional[float] = None, difficulty: Optional[Literal['easy', 'medium', 'hard']] = None) -> float:
-    """ Determine the clue rate to use based on difficulty or a provided clue rate. If both given, the explicit clue_rate takes precedence. """
-    if clue_rate is not None:
-        assert 0 < clue_rate < 1, "clue_rate must be between 0 and 1"
-        return clue_rate
-    if difficulty is not None:
-        assert difficulty in ('easy', 'medium', 'hard'), "Invalid difficulty level; must be one of 'easy', 'medium', or 'hard'"
-        clue_rate = {'easy': 0.25, 'medium': 0.2, 'hard': 0.15}[difficulty]
-        if row * cols <= 81:  # smaller grids should be more solvable so reduce clue rate slightly
-            clue_rate = round(clue_rate - 0.05, 2)
-        return clue_rate
-    # default if neither is provided (default clue_rate for medium difficulty)
-    return 0.2
 
 # TODO: kind of want to remove the use of Pos in favor of Tuple[int, int] to improve transparency from here on out
 
@@ -71,17 +57,8 @@ def generate_puzzle(
             print("Generation error:", e)
             print("Retrying...")
             continue
-        #** updating to skip solving - might add back if I want to filter to unique solutions only later
-        # quick sanity: solver should find at least one solution
-        # solved = solve_grid(puzzle)
-        # if solved is None:
-        #     continue  # (should be rare) numerical symmetry + masking caused a contradiction - try again
-        # final validation (paranoid but cheap)
-        # ok1, msg1 = validate_solution_against_puzzle(puzzle, solved)
-        # if not ok1:
-        #     continue
-        ok2, _ = validate_filled_grid(sol)
-        if not ok2:
+        status, msg = validate_filled_grid(sol)
+        if not status:
             continue
         if unique_only:
             # using a limit of 2 to avoid long computation times - quits after at most 2 are found
@@ -89,7 +66,7 @@ def generate_puzzle(
             if num_solutions != 1:
                 continue
         return puzzle, sol
-    raise RuntimeError("Failed to generate a valid puzzle within max_tries; try a different seed or smaller size.")
+    raise RuntimeError(f"Failed to generate a valid puzzle within {max_tries} tries; try a different seed or smaller size.")
 
 
 def save_generated_test_puzzles(to_generate: List[Dict[str, Any]], verbose: bool = False):
@@ -133,26 +110,6 @@ def save_generated_test_puzzles(to_generate: List[Dict[str, Any]], verbose: bool
         with open(file_path, "w") as fptr:
             json.dump(to_write, fptr, indent=2)
 
-def load_test_puzzles_by_shape(shape: Tuple[int, int], limit: Optional[int] = None) -> List[PuzzleMetadata]:
-    """ Load all test puzzles of a given shape (rows x cols) from the 'tests' directory and return them as PuzzleMetadata instances. """
-    loaded = []
-    shape_str = f"{shape[0]}x{shape[1]}"
-    # find all files matching the shape pattern
-    for p in Path(r"tests/puzzles").glob(f"puzzle*_*.json"):
-        if shape_str in p.name:
-            loaded.append(load_single_test_puzzle(p))
-    if limit is not None:
-        loaded = loaded[:limit]
-    return loaded
-
-def load_single_test_puzzle(file_path: Union[str, Path]) -> PuzzleMetadata:
-    """ Load a single test puzzle from a specified JSON file and return it as a PuzzleMetadata instance. """
-    p = Path(file_path) if not isinstance(file_path, Path) else file_path
-    if not p.exists():
-        raise FileNotFoundError(f"File {file_path} does not exist.")
-    with open(p, "r") as f:
-        data = json.load(f)
-        return PuzzleMetadata(file_source = p, **data)
 
 def view_loaded_test_puzzle(puzzle_metadata: PuzzleMetadata, show_solved: bool = True, show_count: bool = False):
     """ Pretty-print a loaded puzzle and its solution from a PuzzleMetadata instance. """
@@ -175,20 +132,6 @@ def view_loaded_test_puzzle(puzzle_metadata: PuzzleMetadata, show_solved: bool =
 # TODO: might want to change a lot of the data structures used in the whole project to replace lists of strings with numpy arrays
     #+ empty cells could be NaN and arrows could be represented with negative integers (using a mapping to directions)
     #+ this would make it easier to do vectorized operations and checks and should really speed certain things up
-
-def test_loading():
-    # mostly doing this to test loading from JSON and the validation logic:
-    test_shape = (13, 11)
-    test_puzzles = load_test_puzzles_by_shape(test_shape)
-    for idx, puzzle_metadata in enumerate(test_puzzles):
-        puzzle: List[List[str]] = puzzle_metadata.puzzle.to_grid()
-        print(f"Validating puzzle with seed {puzzle_metadata.seed} and shape {puzzle_metadata.shape}...")
-        pretty_print(puzzle, render_arrows=False)
-        print("Solving test grid...")
-        solution = solve_grid(puzzle)
-        ok, msg = validate_solution_against_puzzle(puzzle, solution) if solution else (False, "UNSAT")
-        print(f"Validation result: {ok}; Message: {msg}")
-        pretty_print(solution)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ Like every other project I've invested time into, I wrote this to challenge myse
 
 ## Features
 - **Robust solver** with propagation-first constraint satisfaction problem (CSP) and minimal backtracking
+- **Alternative solvers** using integer linear programming (ILP) formulation or a dynamic programming approach
 - **Validators** for starting puzzles versus filled boards and solutions
 - **Fast generator** using random initialization and repair-based construction (always solvable)
 - **Difficulty presets**: easy / medium / hard (size-aware defaults and clue proportion)
@@ -24,6 +25,15 @@ Like every other project I've invested time into, I wrote this to challenge myse
 - Arrows on the edge of the grid can't point towards the edge while contributing to no numbers
 - Numbers are placed so that no two are at Manhattan distance 1 (checkerboard layout) away from each other.
 
+## Installation
+Currently, there aren't any hard dependencies for the project, but the addition of the Integer Linear Programming (ILP) solvers includes a dependency on `PuLP`.
+To use either `ILPNumberedPuzzleSolver` or `ILPArrowsOnlyPuzzleSolver`, run the following with pip first:
+```python
+python -m pip install pulp
+```
+Then you can use either class or (not yet implemented) the appropriate flags to use it within the code, with a fallback to use the default CSP solver instead.
+
+
 ## Quick start
 ```python
     from main import generate_puzzle
@@ -31,7 +41,8 @@ Like every other project I've invested time into, I wrote this to challenge myse
     from utils import validate_solution_against_puzzle, pretty_print
 
     puzzle, hidden_solution = generate_puzzle(
-        rows=11, cols=9,
+        rows=11,
+        cols=9,
         difficulty="medium",
         unique_only=False,
         seed=42,
@@ -47,7 +58,6 @@ Like every other project I've invested time into, I wrote this to challenge myse
 
 ## Road Map
 - [ ] complete rendering engine to render and save/display grid with arrows for a "printable" format
-- [ ] introduce more sophisticated generator and solver according more typical CP-SAT formulations
 - [ ] (MAYBE) introduce reinforcement learning model for quickly solving, which would also allow quicker generation of larger puzzles
   - [Reference](https://arxiv.org/abs/2006.01610) - "Combining Reinforcement Learning and Constraint Programming for Combinatorial Optimization"
 - [ ] create a simple GUI for playing the game interactively in its own window

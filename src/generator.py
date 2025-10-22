@@ -1,10 +1,10 @@
 
 import random
 from collections import defaultdict
-from itertools import product, filterfalse
-from typing import List, Dict, Set, Tuple, Optional
-from src.structs import Difficulty
-from src.utils import get_allowed_directions, count_visible_arrows
+from itertools import product
+from typing import List, Dict, Set, Tuple, Optional, Union
+from .structs import Difficulty
+from .utils import get_allowed_directions, count_visible_arrows, default_number_layout, layout_to_grid
 
 
 SUPPORTED_DIRECTIONS = ("N", "E", "S", "W")
@@ -20,37 +20,12 @@ _DEF_CLAMPS = {
 }
 
 
-# #? NOTE: should be reusable for checking if (r,c) is a number cell instead of using str.isdigit()
-#     #? which we may want to move away from in the future (especially if we move to numpy later)
-# def _has_same_parity(r: int, c: int) -> bool:
-#     """ Check if row and column indices have the same parity (both even or both odd) """
-#     return (r % 2 == 0) == (c % 2 == 0)
-
-
-def _default_number_layout(rows: int, cols: int) -> Set[Tuple[int, int]]:
-    """ Place numbers on the checkerboard pattern at (even, even) and (odd, odd) cells so that every number is at
-        Manhattan distance >= 2 from any other number.
-    """
-    # if the row and column indices have the same parity (both even or both odd), add a position to the final set
-    return set(((r, c) for r in range(rows) for c in range(cols) if (r % 2 == 0) == (c % 2 == 0)))
-
-
-def _layout_to_grid(rows: int, cols: int, numbers: Set[Tuple[int, int]]) -> List[List[str]]:
-    """ Build an empty puzzle grid with '.' where arrows will go and '0' placeholders in number cells
-        0s get replaced with actual counts later
-    """
-    g = [["." for _ in range(cols)] for _ in range(rows)]
-    for (r, c) in numbers:
-        g[r][c] = "0"
-    return g
-
-
 def _assign_random_arrows(grid: List[List[str]], rng: random.Random) -> None:
     """ Fill every '.' with a random direction token in-place. """
     R, C = len(grid), len(grid[0])
     # for r, c in product(range(R), range(C)):
     #     if grid[r][c] == ".":
-    for r, c in filterfalse(lambda idx: grid[idx[0]][idx[1]] != ".", product(range(R), range(C))):
+    for r, c in filter(lambda idx: grid[idx[0]][idx[1]] == ".", product(range(R), range(C))):
         # iterating over (r,c) where grid[r][c] == "."
         allowed = get_allowed_directions(r, c, R, C)
         #? NOTE: this should never happen given the grid size constraints, but it helps to fail fast if it does
@@ -64,6 +39,10 @@ def _mask_arrows(
     rng: random.Random
 ) -> List[List[str]]:
     """ Return a grid by hiding each arrow with probability (1-clue_rate) while numbers are kept. clue_rate in [0,1]. """
+    # TODO: in the long term, it'd be better for consistency to backtrack over the sequence that yields a solution from the solver,
+        # partition into subsets of steps based on a heuristic, then shuffle the order of the subsets, which should start the puzzle on
+        # a consistent sequence of logic, e.g. if Prop1(p) -> Prop2(q) -> Prop3(r), then a puzzle should tend to start with the same types of
+            # logical conclusion at the initial state based on Prop1 -> Prop2 -> Prop3 order
     R, C = len(solution), len(solution[0])
     puzzle = [[solution[r][c] for c in range(C)] for r in range(R)]
     for r, c in product(range(R), range(C)):
@@ -201,20 +180,18 @@ def _scaled_clue_rate(rows: int, cols: int, diff: Difficulty) -> float:
 def _apply_easy_border_nudge(puzzle: List[List[str]], solution: List[List[str]]) -> None:
     """ Ensure at least one arrow remains fixed on each border line of the puzzle using for-else logic (like switch-case-finally) """
     R, C = len(puzzle), len(puzzle[0])
+
     def _add_solution_to_edge(idx: int, is_row: bool) -> None:
         bound = C if is_row else R
         # TODO: each use of SUPPORTED_DIRECTIONS should probably be replaced with get_allowed_directions to be safer
-        for i in range(bound):
-            tok = puzzle[idx][i] if is_row else puzzle[i][idx]
-            if tok in SUPPORTED_DIRECTIONS:
-                break
-        else: # no break => no fixed arrow on this edge so copy one from solution if possible
+        # if it doesn't already have at least one fixed arrow, add one from solution
+        if not any((puzzle[idx][i] if is_row else puzzle[i][idx]) in SUPPORTED_DIRECTIONS for i in range(bound)):
             for i in range(bound):
-                tok = solution[idx][i] if is_row else solution[i][idx]
-                if tok in SUPPORTED_DIRECTIONS:
-                    a, b, = (idx, i) if is_row else (i, idx)
-                    puzzle[a][b] = tok
+                a, b, = (idx, i) if is_row else (i, idx)
+                if solution[a][b] in SUPPORTED_DIRECTIONS:
+                    puzzle[a][b] = solution[a][b]
                     break
+
     # top and bottom edges
     _add_solution_to_edge(0, is_row=True)
     _add_solution_to_edge(R-1, is_row=True)
@@ -229,7 +206,7 @@ def generate_initial_puzzle(
     cols: int,
     rng: random.Random, # random number generator for reproducibility
     clue_rate: Optional[float] = None,
-    difficulty: Optional[Difficulty] = None,
+    difficulty: Optional[Union[str, Difficulty]] = None,
     max_resamples: int = 20,
 ) -> Tuple[List[List[str]], List[List[str]]]:
     """ Generate a fresh puzzle (with at least one solution)
@@ -237,13 +214,14 @@ def generate_initial_puzzle(
         Returns (puzzle_grid, solution_grid).
     """
     max_digit = ((rows + cols) // 2) - 1 # assumes rows and cols are always odd
-    numbers = _default_number_layout(rows, cols)
+    numbers = default_number_layout(rows, cols)
+    if difficulty is not None and isinstance(difficulty, str):
+        difficulty = Difficulty(difficulty)
     # derive clue_rate if not provided
     if clue_rate is None:
-        diff = difficulty or Difficulty.MEDIUM
-        clue_rate = _scaled_clue_rate(rows, cols, diff)
+        clue_rate = _scaled_clue_rate(rows, cols, difficulty or Difficulty.MEDIUM)
     for _ in range(max_resamples):
-        sol = _layout_to_grid(rows, cols, numbers)
+        sol = layout_to_grid(rows, cols, numbers)
         _assign_random_arrows(sol, rng)
         # try to repair any overflows; if repair fails, resample
         if not _repair_overflows(sol, numbers, max_digit=max_digit, rng=rng):
