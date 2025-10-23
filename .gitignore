@@ -214,3 +214,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# (possibly temporary) local files within ArrowPuzzle project
+arrow_maze_concept.py
+tests/puzzles

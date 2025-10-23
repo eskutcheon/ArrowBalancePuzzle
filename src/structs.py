@@ -1,4 +1,4 @@
-
+# src/structs.py
 
 from dataclasses import dataclass
 from enum import Enum
@@ -19,12 +19,8 @@ class Direction(Enum):
         return (Direction.N, Direction.E, Direction.S, Direction.W)
 
 
-# TODO: a dataclass feels like overkill for just this much so might replace this with a namedtuple later or just keep Tuple[int,int]
-@dataclass(frozen=True)
-class Pos:
-    """ grid position (row, col) """
-    r: int
-    c: int
+# replaces the old dataclass Pos with a simple type alias to eliminate needless complexity
+Pos = Tuple[int, int]  # (row, col)
 
 
 class Difficulty(Enum):
@@ -54,7 +50,7 @@ class Puzzle:
         for r in range(R):
             for c in range(C):
                 tok = grid[r][c]
-                p = Pos(r, c)
+                p = (r, c) #Pos(r, c)
                 if tok == ".":
                     arrow_cells.add(p)
                 # TODO: update to check from directions returned by get_allowed_directions
@@ -71,19 +67,25 @@ class Puzzle:
                       fixed_arrows=fixed_arrows,
                       arrow_cells=arrow_cells)
 
+    @staticmethod
+    def from_layout(rows: int, cols: int, number_positions: Set[Pos], fixed_arrows: Optional[Dict[Pos, Direction]] = None) -> "Puzzle":
+        """ build puzzle with no set numbers (arrows-only) - all non-number cells are arrow cells """
+        arrow_cells: Set[Pos] = set((r, c) for r in range(rows) for c in range(cols) if (r, c) not in number_positions)
+        return Puzzle(rows=rows, cols=cols, numbers = {}, fixed_arrows = fixed_arrows or {}, arrow_cells = arrow_cells)
+
     def to_grid(self) -> List[List[str]]:
         """ Convert the puzzle to a grid representation (MxN list of strings). """
         grid = [["." for _ in range(self.cols)] for _ in range(self.rows)]
-        for pos, num in self.numbers.items():
-            grid[pos.r][pos.c] = str(num)
-        for pos, dir_ in self.fixed_arrows.items():
-            grid[pos.r][pos.c] = dir_.value
+        for (r, c), num in self.numbers.items():
+            grid[r][c] = str(num)
+        for (r, c), direction in self.fixed_arrows.items():
+            grid[r][c] = direction.value
         return grid
 
 
 @dataclass
 class PuzzleMetadata:
-    """ Metadata for a puzzle instance, used for testing and generation purposes. """
+    """ Metadata for a puzzle instance, primarily used for testing and generation purposes, as well as descriptive logging """
     puzzle: Union[Puzzle, List[List[str]]]  # can be a Puzzle instance or a grid of strings
     shape: Optional[Tuple[int, int]] = None
     clue_rate: Optional[float] = None
@@ -118,3 +120,14 @@ class PuzzleMetadata:
             "num_solutions": self.num_solutions,
             "clue_rate": self.clue_rate,
         }
+
+
+
+# used in DP solver:
+@dataclass(frozen=True)
+class RowSegment:
+    """ contiguous run of arrow cells between two numbers (or grid edges) in a given row """
+    row: int
+    left_num: Optional[Pos]
+    run: Tuple[Pos, ...]
+    right_num: Optional[Pos]

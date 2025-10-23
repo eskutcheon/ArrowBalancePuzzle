@@ -1,22 +1,36 @@
-
+# src/utils.py
+from functools import lru_cache
 from copy import deepcopy
-from typing import Dict, List, Tuple, Iterable, Callable
-from structs import Pos
+from typing import Literal, List, Tuple, Optional, Callable, Set
 
 
+#? NOTE: might eventually add support for diagonal directions ("NE", "SE", "SW", "NW") later
 SUPPORTED_DIRECTIONS = ("N", "E", "S", "W")
-# SUPPORTED_DIGITS = tuple(str(i) for i in range(10))  # '0' to '9' (SUBJECT TO CHANGE)
 
 def get_supported_digits(r:int, c: int) -> Tuple[str, ...]:
     max_digit = ((r + c) // 2) - 1 # assumes rows and cols are always odd
     return tuple(str(i) for i in range(max_digit + 1))
 
+
+def get_clue_rate(row, cols, clue_rate: Optional[float] = None, difficulty: Optional[Literal['easy', 'medium', 'hard']] = None) -> float:
+    """ Determine the clue rate to use based on difficulty or a provided clue rate. If both given, the explicit clue_rate takes precedence. """
+    if clue_rate is not None:
+        assert 0 <= clue_rate < 1, "clue_rate must be between 0 and 1"
+        return clue_rate
+    if difficulty is not None:
+        assert difficulty in ('easy', 'medium', 'hard'), "Invalid difficulty level; must be one of 'easy', 'medium', or 'hard'"
+        clue_rate = {'easy': 0.25, 'medium': 0.2, 'hard': 0.15}[difficulty]
+        if row * cols <= 81:  # smaller grids (9x9) should be more solvable so reduce clue rate slightly
+            clue_rate = round(clue_rate - 0.05, 2)
+        return clue_rate
+    # default if neither is provided (default clue_rate for medium difficulty)
+    return 0.2
+
 def _is_valid_token(tok: str, expected_tok: str) -> bool:
     """ Check if a token is a valid arrow direction or a digit. """
     return tok in SUPPORTED_DIRECTIONS and tok == expected_tok # or tok.isdigit()
 
-
-def loop_in_direction(
+def _loop_in_direction(
     grid: List[List[str]],
     # idx: int,
     step: int,
@@ -40,12 +54,12 @@ def loop_in_direction(
 
 
 # TODO: generalize further and replace ArrowCSP._index_visibility with a similar helper function
-def visible_arrows_from(grid: List[List[str]], t: Pos) -> List[str]:
+def visible_arrows_from(grid: List[List[str]], t: Tuple[int, int]) -> List[str]:
     """ Return the list of arrow tokens ('N','E','S','W') that contribute to number at t
         by scanning in the four cardinal directions until the grid edge.
     """
     R, C = len(grid), len(grid[0])
-    r, c = t.r, t.c
+    r, c = t #t.r, t.c
     seen: List[str] = []
     def append_if_valid(tok: str, target_tok: str) -> None:
         """ Append token to seen if it matches the target direction """
@@ -53,33 +67,33 @@ def visible_arrows_from(grid: List[List[str]], t: Pos) -> List[str]:
         if _is_valid_token(tok, target_tok):
             seen.append(tok)
     # search to left: arrows at (r, j< c) pointing E
-    j = loop_in_direction(grid, -1, (r, c), True, lambda k: k >= 0, lambda tok: append_if_valid(tok, 'E'))
+    _loop_in_direction(grid, -1, (r, c), True, lambda k: k >= 0, lambda tok: append_if_valid(tok, 'E'))
     # search to right: arrows at (r, j>c) pointing W
-    j = loop_in_direction(grid, 1, (r, c), True, lambda k: k < C, lambda tok: append_if_valid(tok, 'W'))
+    _loop_in_direction(grid, 1, (r, c), True, lambda k: k < C, lambda tok: append_if_valid(tok, 'W'))
     # search above: arrows at (i<r, c) pointing S
-    i = loop_in_direction(grid, -1, (r, c), False, lambda k: k >= 0, lambda tok: append_if_valid(tok, 'S'))
+    _loop_in_direction(grid, -1, (r, c), False, lambda k: k >= 0, lambda tok: append_if_valid(tok, 'S'))
     # search below: arrows at (i>r, c) pointing N
-    i = loop_in_direction(grid, 1, (r, c), False, lambda k: k < R, lambda tok: append_if_valid(tok, 'N'))
+    _loop_in_direction(grid, 1, (r, c), False, lambda k: k < R, lambda tok: append_if_valid(tok, 'N'))
     # assert len(seen) > 0, f"No visible arrows found at {t} in grid of size {R}x{C}"
     return seen
 
-def count_visible_arrows(grid: List[List[str]], t: Pos) -> int:
+def count_visible_arrows(grid: List[List[str]], t: Tuple[int, int]) -> int:
     """ Fast count of arrows that contribute to number at t (no list allocs) """
     R, C = len(grid), len(grid[0])
-    r, c = t.r, t.c
+    r, c = t #t.r, t.c
     cnt = 0
     def increment_if_valid(tok: str, target_tok: str) -> None:
         nonlocal cnt
         if _is_valid_token(tok, target_tok):
             cnt += 1
     # left (E)
-    j = loop_in_direction(grid, -1, (r, c), True, lambda k: k >= 0, lambda tok: increment_if_valid(tok, 'E'))
+    _loop_in_direction(grid, -1, (r, c), True, lambda k: k >= 0, lambda tok: increment_if_valid(tok, 'E'))
     # right (W)
-    j = loop_in_direction(grid, 1, (r, c), True, lambda k: k < C, lambda tok: increment_if_valid(tok, 'W'))
+    _loop_in_direction(grid, 1, (r, c), True, lambda k: k < C, lambda tok: increment_if_valid(tok, 'W'))
     # up (S)
-    i = loop_in_direction(grid, -1, (r, c), False, lambda k: k >= 0, lambda tok: increment_if_valid(tok, 'S'))
+    _loop_in_direction(grid, -1, (r, c), False, lambda k: k >= 0, lambda tok: increment_if_valid(tok, 'S'))
     # down (N)
-    i = loop_in_direction(grid, 1, (r, c), False, lambda k: k < R, lambda tok: increment_if_valid(tok, 'N'))
+    _loop_in_direction(grid, 1, (r, c), False, lambda k: k < R, lambda tok: increment_if_valid(tok, 'N'))
     return cnt
 
 
@@ -91,9 +105,8 @@ def validate_filled_grid(grid: List[List[str]]) -> Tuple[bool, str]:
         Returns (True, "OK") if valid, or (False, "reason") if invalid
     """
     R, C = len(grid), len(grid[0])
-    # allowed_tokens = set(SUPPORTED_DIRECTIONS + SUPPORTED_DIGITS)
     digit_set = set(get_supported_digits(R, C))
-    # 1) arrows must be valid tokens
+    # validation: arrows must be valid tokens
     for r in range(R):
         for c in range(C):
             allowed_tokens = set(get_allowed_directions(r, c, R, C)).union(digit_set)
@@ -102,13 +115,13 @@ def validate_filled_grid(grid: List[List[str]]) -> Tuple[bool, str]:
                 return False, f"Unfilled cell at {(r, c)}"
             if tok not in allowed_tokens:
                 return False, f"Unknown token {tok!r} at {(r, c)}"
-    # 2) each number must match visible arrow count
+    # validation: each number must match visible arrow count
     for r in range(R):
         for c in range(C):
             tok = grid[r][c]
             if tok.isdigit():
                 want = int(tok)
-                seen = visible_arrows_from(grid, Pos(r, c))
+                seen = visible_arrows_from(grid, (r, c))
                 got = len(seen)
                 if got != want:
                     return False, f"Number {want} at {(r,c)} only sees {got} incoming arrows ({seen})"
@@ -144,17 +157,18 @@ def validate_solution_against_puzzle(
     return validate_filled_grid(filled_grid)
 
 
-def get_allowed_directions(r: int, c: int, r_max: int, c_max: int) -> List[str]:
-    allowed = set()
+@lru_cache(maxsize=None)
+def get_allowed_directions(r: int, c: int, r_max: int, c_max: int) -> Tuple[str, ...]: #List[str]:
+    allowed = [] #set()
     if r > 0:
-        allowed.add("N")
+        allowed.append("N")
     if r < r_max - 1:
-        allowed.add("S")
+        allowed.append("S")
     if c > 0:
-        allowed.add("W")
+        allowed.append("W")
     if c < c_max - 1:
-        allowed.add("E")
-    return list(allowed)
+        allowed.append("E")
+    return tuple(allowed)
 
 
 # TODO: replace with pprint.pprint or some table formatting library later
@@ -169,3 +183,16 @@ def pretty_print(grid: List[List[str]], render_arrows: bool = True) -> None:
                     pgrid[r][c] = f"\033[36m{arrow_map[pgrid[r][c]]}\033[0m"  # using cyan unicode arrows
     for row in pgrid:
         print(" ".join(row))
+
+
+def default_number_layout(rows: int, cols: int) -> Set[Tuple[int, int]]:
+    """ return set of checkerboard positions (no two numbers at Manhattan distance 1) """
+    # if the row and column indices have the same parity (both even or both odd), add a position to the final set
+    return set((r, c) for r in range(rows) for c in range(cols) if (r % 2 == 0) == (c % 2 == 0))
+
+def layout_to_grid(rows: int, cols: int, numbers: Set[Tuple[int, int]]) -> List[List[str]]:
+    """ return grid with '.' at arrow cells and '0' placeholders at number cells, where digits are filled later """
+    g = [["." for _ in range(cols)] for _ in range(rows)]
+    for (r, c) in numbers:
+        g[r][c] = "0"
+    return g
