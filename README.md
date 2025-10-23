@@ -1,7 +1,8 @@
 # Arrow Balancing Puzzles — Generator, Solver, and Validator
 
-A simple engine for Arrow/Number Balancing puzzles (I'm still not sure of the name). Each numbered cell requires exactly that many **incoming arrows** from its row/column (pointing to the number).
-Like every other project I've invested time into, I wrote this to challenge myself. In this case, I had trouble thinking of how to algorithmically solve the example below and decided to explore it further as a constraint satisfaction problem.
+A simple engine for a family of Arrow Balancing puzzles that are functionally the same as the "Arrows" puzzles [shown here](https://puzzlegenius.org/arrows/). Each numbered cell requires exactly that many **incoming arrows** from its row/column (pointing to the number). Other rules are detailed below. The project is slowly being built on so that I may eventually make it a webapp or simple game GUI after getting the core functionality solid.
+
+Like a lot of other projects I've invested time into, I wrote this while getting distracted from another task because the problem was more interesting. In this case, I had trouble thinking of how to solve the example below with dynamic programming (originally) and decided to explore it further as a constraint satisfaction problem.
 
 
 
@@ -57,6 +58,9 @@ Then you can use either class or (not yet implemented) the appropriate flags to 
 
 
 ## Road Map
+- [ ] (SHORT TERM) encapsulate more aspects of the puzzle like grid state, game state, etc and make more higher-order functions to update these
+- [ ] (SHORT TERM) write an abstract factory solver to handle settings and game solver initialization
+- [ ] (SHORT TERM) add parser to handle game settings and dataclasses to encapsulate them - should be flexible enough to instantiate with input from a GUI
 - [ ] complete rendering engine to render and save/display grid with arrows for a "printable" format
 - [ ] (MAYBE) introduce reinforcement learning model for quickly solving, which would also allow quicker generation of larger puzzles
   - [Reference](https://arxiv.org/abs/2006.01610) - "Combining Reinforcement Learning and Constraint Programming for Combinatorial Optimization"

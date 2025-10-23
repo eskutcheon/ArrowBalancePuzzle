@@ -218,4 +218,4 @@ __marimo__/
 
 # (possibly temporary) local files within ArrowPuzzle project
 arrow_maze_concept.py
-tests/
+tests/puzzles
